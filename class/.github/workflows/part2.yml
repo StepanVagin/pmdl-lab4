@@ -1,0 +1,107 @@
+name: Advanced Workflow
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'models/**'
+      - 'backend/**'
+  workflow_dispatch:
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install -r part2/backend/requirements.txt
+          python -m pip install -r part2/frontend/requirements.txt
+
+      - name: Run Backend and Test Predict Batch
+        run: |
+          cd part2/backend
+          python backend.py &
+          BACKEND_PID=$!
+
+          for i in {1..20}; do
+            if curl -s http://localhost:8000/health | grep -q healthy; then
+              echo "Backend is up!"
+              break
+            fi
+            sleep 1
+          done
+
+          RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X 'POST' \
+            'http://localhost:8000/predict_batch' \
+            -H 'accept: application/json' \
+            -H 'Content-Type: multipart/form-data' \
+            -F 'file=@../data/bank-sample.csv;type=text/csv')
+
+          if [ "$RESPONSE" -eq 200 ]; then
+            echo "predict_batch endpoint test passed."
+          else
+            echo "predict_batch endpoint test failed with status $RESPONSE"
+            cat response.json
+            kill $BACKEND_PID
+            exit 1
+          fi
+
+          kill $BACKEND_PID
+
+  generate-report:
+    needs: run-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+
+      - name: Generate Report
+        run: | 
+          precision=$(jq '.precision' part2/models/best/metadata.json)
+          recall=$(jq '.recall' part2/models/best/metadata.json)
+          f1=$(jq '.f1' part2/models/best/metadata.json)
+          model_type=$(jq -r '.model_filename' part2/models/best/metadata.json | sed -E 's/model_(.*)\.joblib/\1/')
+
+          mkdir -p part2/reports
+          report_path=part2/reports/best_model_report.md
+
+          echo "# Best Model Report" > "$report_path"
+          echo "" >> "$report_path"
+          echo "## Model Info" >> "$report_path"
+          echo "" >> "$report_path"
+          echo "- **Model Type**: $model_type" >> "$report_path"
+
+          echo "- **Parameters**:" >> "$report_path"
+          jq -r '.params | to_entries[] | "  - \(.key): \(.value)"' part2/models/best/metadata.json >> "$report_path"
+          echo "" >> "$report_path"
+
+          echo "## Metrics" >> "$report_path"
+          echo "" >> "$report_path"
+          # Possible error
+          echo "| Metric    | Value |" >> "$report_path"
+          echo "|-----------|-------|" >> "$report_path"
+          echo "| Precision | prr |" >> "$report_path"
+          echo "| Recall    | rrr |" >> "$report_path"
+          echo "| F1 Score  | $f1 |" >> "$report_path"
+          echo "" >> "$report_path"
+
+          echo "## Images" >> "$report_path"
+          echo "" >> "$report_path"
+          for img in part2/models/best/*.png; do
+            rel_path=$(realpath --relative-to=reports "$img")
+            echo "![Image]($rel_path)" >> "$report_path"
+          done
+
+      - name: Commit and push changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add part2/reports/best_model_report.md
+          # Possible error
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
