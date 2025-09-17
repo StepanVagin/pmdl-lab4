@@ -8,7 +8,13 @@ import joblib
 import pandas as pd
 
 app = FastAPI()
-model_path = os.getenv("MODEL_DIR", "./models") + "/best_model_pipeline.joblib"
+# In Docker: MODEL_DIR=/models, file is at /models/best_model_pipeline.joblib
+# In GitHub Actions: use relative path ../models/best/best_model_pipeline.joblib
+model_dir = os.getenv("MODEL_DIR")
+if model_dir:
+    model_path = os.path.join(model_dir, "best_model_pipeline.joblib")
+else:
+    model_path = "../models/best/best_model_pipeline.joblib"
 model = joblib.load(model_path)
 
 @app.get("/health", tags=['health'])  
