@@ -80,11 +80,10 @@ jobs:
 
           echo "## Metrics" >> "$report_path"
           echo "" >> "$report_path"
-          # Possible error
           echo "| Metric    | Value |" >> "$report_path"
           echo "|-----------|-------|" >> "$report_path"
-          echo "| Precision | prr |" >> "$report_path"
-          echo "| Recall    | rrr |" >> "$report_path"
+          echo "| Precision | $precision |" >> "$report_path"
+          echo "| Recall    | $recall |" >> "$report_path"
           echo "| F1 Score  | $f1 |" >> "$report_path"
           echo "" >> "$report_path"
 
@@ -103,5 +102,5 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add part2/reports/best_model_report.md
-          # Possible error
+          git commit -m "Update model report" || exit 0
           git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
